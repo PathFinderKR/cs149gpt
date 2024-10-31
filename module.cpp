@@ -25,15 +25,96 @@ inline void twoDimWrite(std::vector<float> &tensor, int &x, int &y, const int &s
 }
 
 // Step #2: Implement Read/Write Accessors for a 4D Tensor
-inline float fourDimRead(std::vector<float> &tensor, int &x, int &y, int &z, int &b, 
+inline float fourDimRead(std::vector<float> &tensor, int &x, int &y, int &z, int &b,
         const int &sizeX, const int &sizeY, const int &sizeZ) {
-    return 0.0;
+    // Note that sizeX is the size of a Row, not the number of rows
+    // Note that sizeY is the size of a Column, not the number of columns
+    // Note that sizeZ is the size of a Channel, not the number of channels
+    // Note that sizeB is the size of a Batch, not the number of batches
+
+    return tensor[x * (sizeY * sizeZ * sizeB) + y * (sizeZ * sizeB) + z * (sizeB) + b];
 }
 
 inline void fourDimWrite(std::vector<float> &tensor, int &x, int &y, int &z, int &b, 
         const int &sizeX, const int &sizeY, const int &sizeZ, float &val) {
-    return; 
+    tensor[x * (sizeY * sizeZ * sizeB) + y * (sizeZ * sizeB) + z * (sizeB) + b] = val;
 }
+
+inline void printTwoDimTensor(std::vector<float> &tensor, const int &sizeX, const int &sizeY) {
+    for (int i = 0; i < sizeX; i++) {
+        for (int j = 0; j < sizeY; j++) {
+            std::cout << twoDimRead(tensor, i, j, sizeX) << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+inline void printFourDimTensor(std::vector<float> &tensor, const int &sizeX, const int &sizeY, const int &sizeZ, const int &sizeB) {
+    for (int i = 0; i < sizeX; i++) {
+        for (int j = 0; j < sizeY; j++) {
+            for (int k = 0; k < sizeZ; k++) {
+                for (int l = 0; l < sizeB; l++) {
+                    std::cout << fourDimRead(tensor, i, j, k, l, sizeX, sizeY, sizeZ) << " ";
+                }
+                std::cout << std::endl;
+            }
+        }
+    }
+}
+
+inline std::vector<float> multiplyTwoDimTensors(
+    std::vector<float> &A,
+    std::vector<float> &B,
+    int sizeXA, int sizeYA, // sizeXA = size of A's row (number of A's columns), sizeYA = size of A's column (number of A's rows)
+    int sizeXB, int sizeYB, // sizeXB = size of B's row (number of B's columns), sizeYB = size of B's column (number of B's rows)
+    ) {
+    // Check if the two matrices can be multiplied
+    if (sizeXA != sizeYB) {
+        throw std::invalid_argument("Matrix dimensions are incompatible for multiplication.");
+    }
+
+    // Initialize the resulting matrix
+    std::vector<float> C(sizeYA * sizeXB, 0.0f);
+
+    // Multiply the two matrices
+    for (int i = 0; i < sizeYA; i++) {
+        for (int j = 0; j < sizeXB; j++) {
+            float sum = 0.0f;
+            for (int k = 0; k < sizeXA; k++) {
+                sum += twoDimRead(A, i, k, sizeXA) * twoDimRead(B, k, j, sizeXB);
+            }
+            twoDimWrite(C, i, j, sizeYA, sum);
+        }
+    }
+    return C;
+}
+
+inline std::vector<float> multiplyFourDimTensors(
+    std::vector<float> &Q,
+    std::vector<float> &K,
+    int sizeB, int size H, int sizeN, int sizeD, // sizeB = size of Batch, sizeH = size of Head, sizeN = size of Sequence Length, sizeD = size of Embedding Dimensionality
+    ) {
+
+    // Initialize the resulting matrix
+    std::vector<float> S(sizeB * sizeH * sizeN * sizeD, 0.0f);
+
+    // Multiply the two matrices
+    for (int b = 0; b < sizeB; b++) {
+        for (int h = 0; h < sizeH; h++) {
+            for (int i = 0; i < sizeN; i++) {
+                for (int j = 0; j < sizeD; j++) {
+                    float sum = 0.0f;
+                    for (int k = 0; k < sizeD; k++) {
+                        sum += fourDimRead(Q, b, h, i, k, sizeB, sizeH, sizeN) * fourDimRead(K, b, h, i, k, sizeB, sizeH, sizeN);
+                    }
+                    fourDimWrite(S, b, h, i, j, sizeB, sizeH, sizeN, sum);
+                }
+            }
+        }
+    }
+    return S;
+}
+
 
 // DO NOT EDIT THIS FUNCTION //
 std::vector<float> formatTensor(torch::Tensor tensor) {
@@ -123,6 +204,59 @@ torch::Tensor myNaiveAttention(torch::Tensor QTensor, torch::Tensor KTensor, tor
     */
     
     // -------- YOUR CODE HERE  -------- //
+    /*
+    1) For each Batch:
+    2) For each Head:
+    a) Loop through Q and K and multiply Q with K^t, storing the result in QK^t.
+    QK^t is preallocated for you, and passed as an arg to myNaiveAttention.
+    (You should not have to allocate any pytorch tensors for any part of this assignment)
+
+    Note that after indexing the batch and head, you will be left with 2D matrices
+    of shape (N, d) for Q and K. Also note that the dimensions of K are (N, d) and
+    the dimensions of the K^t that you want are (d, N). Rather than transposing K^t, how
+    can you multiply Q and K in such an order that the result is QK^t? Think about how
+    you can reorder your `for` loops from traditional matrix multiplication.
+
+    b) After you have achieved QK^t -- which should have shape (N, N) -- you should loop
+    through each row. For each row, you should get the exponential of each row element,
+    which you can get using the C++ inbuilt `exp` function. Now, divide each of these
+    resulting exponentials by the sum of all exponentials in its row and then store it back into QK^t.
+
+    c) Finally, you should matrix multiply QK^t with V and store the result into O.
+    Notice, much like Q and K, after you index the batch and head V and O will
+    be of shape (N, d). Therefore, after you multiply QK^t (N, N) with V (N, d),
+    you can simply store the resulting shape (N, d) back into O.
+    */
+
+    // a
+    for (int b = 0; b < B; b++) {
+        for (int h = 0; h < H; h++) {
+            for (int i = 0; i < N; i++) {
+                for (int j = 0; j < N; j++) {
+                    float val = 0.0;
+                    for (int k = 0; k < d; k++) {
+                        val += fourDimRead(Q, b, h, i, k, H, N, d) * fourDimRead(K, b, h, j, k, H, N, d);
+                    }
+                    twoDimWrite(QK_t, i, j, N, val);
+                }
+            }
+        }
+    }
+
+    // b
+    for (int i = 0; i < N; i++) {
+        float sum = 0.0;
+        for (int j = 0; j < N; j++) {
+            sum += exp(twoDimRead(QK_t, i, j, N));
+        }
+        for (int j = 0; j < N; j++) {
+            float val = exp(twoDimRead(QK_t, i, j, N)) / sum;
+            twoDimWrite(QK_t, i, j, N, val);
+        }
+    }
+
+
+
     
     // DO NOT EDIT THIS RETURN STATEMENT //
     // It formats your C++ Vector O back into a Tensor of Shape (B, H, N, d) and returns it //
