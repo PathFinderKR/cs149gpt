@@ -26,13 +26,13 @@ inline void twoDimWrite(std::vector<float> &tensor, int &x, int &y, const int &s
 
 // Step #2: Implement Read/Write Accessors for a 4D Tensor
 inline float fourDimRead(std::vector<float> &tensor, int &x, int &y, int &z, int &b,
-                         const int &sizeX, const int &sizeY, const int &sizeZ, const int &sizeB) {
-    return tensor[x * (sizeY * sizeZ * sizeB) + y * (sizeZ * sizeB) + z * sizeB + b];
+        const int &sizeX, const int &sizeY, const int &sizeZ) {
+    return tensor[x * (sizeX * sizeY * sizeZ) + y * (sizeY * sizeZ) + z * (sizeZ) + b];
 }
 
 inline void fourDimWrite(std::vector<float> &tensor, int &x, int &y, int &z, int &b,
-                         const int &sizeX, const int &sizeY, const int &sizeZ, const int &sizeB, float &val) {
-    tensor[x * (sizeY * sizeZ * sizeB) + y * (sizeZ * sizeB) + z * sizeB + b] = val;
+        const int &sizeX, const int &sizeY, const int &sizeZ, float &val) {
+    tensor[x * (sizeX * sizeY * sizeZ) + y * (sizeY * sizeZ) + z * (sizeZ) + b] = val;
 }
 
 inline std::vector<float> multiplyTwoDimTensors(
@@ -140,40 +140,18 @@ torch::Tensor myNaiveAttention(torch::Tensor QTensor, torch::Tensor KTensor, tor
     */
 
     /* Here is an example of how to read/write 0's to  QK_t (N, N) using the 2D accessors
-
-           for (int i = 0; i < N; i++) {
+        for (int i = 0; i < N; i++) {
 	       for (int j = 0; j < N; j++) {
 	           float val = twoDimRead(QK_t, i, j, N);
-               val = 0.0;
+           val = 0.0;
 	           twoDimWrite(QK_t, i, j, N, val);
-             }
-         }
+           }
+        }
     */
     
     // -------- YOUR CODE HERE  -------- //
-    /*
-    1) For each Batch:
-    2) For each Head:
-    a) Loop through Q and K and multiply Q with K^t, storing the result in QK^t.
-    QK^t is preallocated for you, and passed as an arg to myNaiveAttention.
-    (You should not have to allocate any pytorch tensors for any part of this assignment)
 
-    Note that after indexing the batch and head, you will be left with 2D matrices
-    of shape (N, d) for Q and K. Also note that the dimensions of K are (N, d) and
-    the dimensions of the K^t that you want are (d, N). Rather than transposing K^t, how
-    can you multiply Q and K in such an order that the result is QK^t? Think about how
-    you can reorder your `for` loops from traditional matrix multiplication.
 
-    b) After you have achieved QK^t -- which should have shape (N, N) -- you should loop
-    through each row. For each row, you should get the exponential of each row element,
-    which you can get using the C++ inbuilt `exp` function. Now, divide each of these
-    resulting exponentials by the sum of all exponentials in its row and then store it back into QK^t.
-
-    c) Finally, you should matrix multiply QK^t with V and store the result into O.
-    Notice, much like Q and K, after you index the batch and head V and O will
-    be of shape (N, d). Therefore, after you multiply QK^t (N, N) with V (N, d),
-    you can simply store the resulting shape (N, d) back into O.
-    */
 
     
     // DO NOT EDIT THIS RETURN STATEMENT //
