@@ -72,8 +72,8 @@ std::vector<float> formatTensor(torch::Tensor tensor) {
 }
 
 /* Programming Your Attention Modules.
- * 
- * You are given Q, K, and V Tensors as inputs that are formatted as vectors. We have also created O and QK^t Tensors 
+ *
+ * You are given Q, K, and V Tensors as inputs that are formatted as vectors. We have also created O and QK^t Tensors
  * that are formatted as vectors. After you have implemented your accessors in the Warm-Up you should be able to
  * read/write to these tensors via the read/write functions above.
  *
@@ -104,8 +104,8 @@ torch::Tensor myNaiveAttention(torch::Tensor QTensor, torch::Tensor KTensor, tor
 
     // Q, K, V are passed in with Shape: (B, H, N, d)
     //QK^t Intermediate Tensor has Shape (N, N)
-    
-    //Make O Tensor with Shape (B, H, N, d) 
+
+    //Make O Tensor with Shape (B, H, N, d)
     at::Tensor OTensor = at::zeros({B, H, N, d}, at::kFloat);
 
     //Format O, Q, K, and V tensors into 4D vectors
@@ -116,7 +116,7 @@ torch::Tensor myNaiveAttention(torch::Tensor QTensor, torch::Tensor KTensor, tor
 
     //Format QK_t Tensor into a 2D vector.
     std::vector<float> QK_t = formatTensor(QK_tTensor);
-    
+
     /* Here is an example of how to read/write 0's to  Q (B, H, N, d) using the 4D accessors
 
         //loop over Batch Size
@@ -148,12 +148,50 @@ torch::Tensor myNaiveAttention(torch::Tensor QTensor, torch::Tensor KTensor, tor
            }
         }
     */
-    
+
     // -------- YOUR CODE HERE  -------- //
+    // Loop over Batch Size
+    for (int b = 0; b < B; b++) {
 
+        // Loop over Heads
+        for (int h = 0; h < H; h++) {
 
+            // Step 1: Compute QK^t (Attention Scores)
+            for (int i = 0; i < N; i++) {
+                for (int j = 0; j < N; j++) {
+                    float sum = 0.0f;
+                    for (int k = 0; k < d; k++) {
+                        sum += fourDimRead(Q, b, h, i, k, H, N, d) * fourDimRead(K, b, h, j, k, H, N, d);
+                    }
+                    twoDimWrite(QK_t, i, j, N, sum);
+                }
+            }
 
-    
+            // Step 2: Apply Softmax to QK^t (Attention Weights)
+            for (int i = 0; i < N; i++) {
+                float row_sum = 0.0f;
+                for (int j = 0; j < N; j++) {
+                    row_sum += exp(twoDimRead(QK_t, i, j, N));
+                }
+                for (int j = 0; j < N; j++) {
+                    float val = exp(twoDimRead(QK_t, i, j, N)) / row_sum;
+                    twoDimWrite(QK_t, i, j, N, val);
+                }
+            }
+
+            // Step 3: Multiply Attention Weights with V (Compute Output)
+            for (int i = 0; i < N; i++) {
+                for (int k = 0; k < d; k++) {
+                    float sum = 0.0f;
+                    for (int j = 0; j < N; j++) {
+                        sum += twoDimRead(QK_t, i, j, N) * fourDimRead(V, b, h, j, k, H, N, d);
+                    }
+                    fourDimWrite(O, b, h, i, k, H, N, d, sum);
+                }
+            }
+        }
+    }
+
     // DO NOT EDIT THIS RETURN STATEMENT //
     // It formats your C++ Vector O back into a Tensor of Shape (B, H, N, d) and returns it //
     return torch::from_blob(O.data(), {B, H, N, d}, torch::TensorOptions().dtype(torch::kFloat32)).clone();
@@ -166,11 +204,11 @@ torch::Tensor myNaiveAttention(torch::Tensor QTensor, torch::Tensor KTensor, tor
 
 torch::Tensor myUnfusedAttentionBlocked(torch::Tensor QTensor, torch::Tensor KTensor, torch::Tensor VTensor, torch::Tensor QK_tTensor,
                 int B, int H, int N, int d){
-    
+
     // Q, K, V are passed in with Shape: (B, H, N, d)
     //QK^t Intermediate Tensor has Shape (N, N)
 
-    //Make O Tensor with Shape (B, H, N, d) 
+    //Make O Tensor with Shape (B, H, N, d)
     at::Tensor OTensor = at::zeros({B, H, N, d}, at::kFloat);
 
     //Format O, Q, K, and V tensors into 4D vectors
@@ -183,6 +221,57 @@ torch::Tensor myUnfusedAttentionBlocked(torch::Tensor QTensor, torch::Tensor KTe
     std::vector<float> QK_t = formatTensor(QK_tTensor);
 
     // -------- YOUR CODE HERE  -------- //
+    // Loop over Batch Size
+    for (int b = 0; b < B; b++) {
+
+        // Loop over Heads
+        for (int h = 0; h < H; h++) {
+
+            // Step 1: Compute QK^t (Attention Scores) in Blocks
+            int blockSize = 1000000; // Example block size for blocked multiplication
+
+            for (int iBlock = 0; iBlock < N; iBlock += blockSize) {
+                for (int jBlock = 0; jBlock < N; jBlock += blockSize) {
+                    for (int i = iBlock; i < std::min(iBlock + blockSize, N); i++) {
+                        for (int j = jBlock; j < std::min(jBlock + blockSize, N); j++) {
+                            float sum = 0.0f;
+                            for (int k = 0; k < d; k++) {
+                                sum += fourDimRead(Q, b, h, i, k, H, N, d) * fourDimRead(K, b, h, j, k, H, N, d);
+                            }
+                            twoDimWrite(QK_t, i, j, N, sum);
+                        }
+                    }
+                }
+            }
+
+            // Step 2: Apply Unfused Softmax to QK^t (Attention Weights)
+            for (int i = 0; i < N; i++) {
+                float row_sum = 0.0f;
+                for (int j = 0; j < N; j++) {
+                    row_sum += exp(twoDimRead(QK_t, i, j, N));
+                }
+                for (int j = 0; j < N; j++) {
+                    float val = exp(twoDimRead(QK_t, i, j, N)) / row_sum;
+                    twoDimWrite(QK_t, i, j, N, val);
+                }
+            }
+
+            // Step 3: Multiply Attention Weights with V (Compute Output) in Blocks
+            for (int iBlock = 0; iBlock < N; iBlock += blockSize) {
+                for (int kBlock = 0; kBlock < d; kBlock += blockSize) {
+                    for (int i = iBlock; i < std::min(iBlock + blockSize, N); i++) {
+                        for (int k = kBlock; k < std::min(kBlock + blockSize, d); k++) {
+                            float sum = 0.0f;
+                            for (int j = 0; j < N; j++) {
+                                sum += twoDimRead(QK_t, i, j, N) * fourDimRead(V, b, h, j, k, H, N, d);
+                            }
+                            fourDimWrite(O, b, h, i, k, H, N, d, sum);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // DO NOT EDIT THIS RETURN STATEMENT //
     // It formats your C++ Vector O back into a Tensor of Shape (B, H, N, d) and returns it //
@@ -209,7 +298,7 @@ torch::Tensor myFusedAttention(torch::Tensor QTensor, torch::Tensor KTensor, tor
     std::vector<float> Q = formatTensor(QTensor);
     std::vector<float> K = formatTensor(KTensor);
     std::vector<float> V = formatTensor(VTensor);
-    
+
     //Format ORow Tensor into a 1D vector
     // You can simply access this as ORow[i]
     std::vector<float> ORow = formatTensor(ORowTensor);
@@ -217,22 +306,47 @@ torch::Tensor myFusedAttention(torch::Tensor QTensor, torch::Tensor KTensor, tor
 
     // -------- YOUR CODE HERE  -------- //
     // We give you a template of the first three loops for your convenience
-    //loop over batch
+    #pragma omp parallel for collapse(3)
     for (int b = 0; b < B; b++){
 
         //loop over heads
         for (int h = 0; h < H; h++){
             for (int i = 0; i < N ; i++){
 
-		// YRow is moved inside so each OpenMP thread gets a local copy.
-                at::Tensor ORowTensor = temp.index({torch::indexing::Slice(omp_get_thread_num(), torch::indexing::None)});      
+                // YRow is moved inside so each OpenMP thread gets a local copy.
+                at::Tensor ORowTensor = temp.index({torch::indexing::Slice(omp_get_thread_num(), torch::indexing::None)});
                 std::vector<float> ORow = formatTensor(ORowTensor);
-		//YOUR CODE HERE
+
+                // Step 1: Compute QK^t and store in ORow (Attention Weights)
+                for (int j = 0; j < N; j++) {
+                    float sum = 0.0f;
+                    for (int k = 0; k < d; k++) {
+                        sum += fourDimRead(Q, b, h, i, k, H, N, d) * fourDimRead(K, b, h, j, k, H, N, d);
+                    }
+                    ORow[j] = sum;
+                }
+
+                // Step 2: Apply Softmax to ORow (Attention Weights)
+                float row_sum = 0.0f;
+                for (int j = 0; j < N; j++) {
+                    row_sum += exp(ORow[j]);
+                }
+                for (int j = 0; j < N; j++) {
+                    ORow[j] = exp(ORow[j]) / row_sum;
+                }
+
+                // Step 3: Multiply Attention Weights with V and store in O
+                for (int k = 0; k < d; k++) {
+                    float sum = 0.0f;
+                    for (int j = 0; j < N; j++) {
+                        sum += ORow[j] * fourDimRead(V, b, h, j, k, H, N, d);
+                    }
+                    fourDimWrite(O, b, h, i, k, H, N, d, sum);
+                }
             }
-	}
+        }
     }
-	    
-	
+
     // DO NOT EDIT THIS RETURN STATEMENT //
     // It formats your C++ Vector O back into a Tensor of Shape (B, H, N, d) and returns it //
     return torch::from_blob(O.data(), {B, H, N, d}, torch::TensorOptions().dtype(torch::kFloat32)).clone();
@@ -246,10 +360,10 @@ torch::Tensor myFusedAttention(torch::Tensor QTensor, torch::Tensor KTensor, tor
 torch::Tensor myFlashAttention(torch::Tensor QTensor, torch::Tensor KTensor, torch::Tensor VTensor,
                torch::Tensor QiTensor, torch::Tensor KjTensor, torch::Tensor VjTensor,
                torch::Tensor SijTensor, torch::Tensor PijTensor, torch::Tensor PVTensor,
-               torch::Tensor OiTensor, torch::Tensor LTensor,  torch::Tensor LiTensor, 
+               torch::Tensor OiTensor, torch::Tensor LTensor,  torch::Tensor LiTensor,
 	       torch::Tensor LijTensor, torch::Tensor LnewTensor, int Bc, int Br,
                 int B, int H, int N, int d) {
-        
+
     // Q, K, V are passed in with Shape: (B, H, N, d)
     // Sij, Pij are passed in with Shape: (Br, Bc)
     // Kj, Vj are passed in with Shape: (Bc, d)
@@ -259,7 +373,7 @@ torch::Tensor myFlashAttention(torch::Tensor QTensor, torch::Tensor KTensor, tor
 
     //Make O Tensor with Shape (B, H, N, d)
     at::Tensor OTensor = at::zeros({B, H, N, d}, at::kFloat);
-   
+
     //Format All Tensors into Vectors
     std::vector<float> O = formatTensor(OTensor);
     std::vector<float> Q = formatTensor(QTensor);
